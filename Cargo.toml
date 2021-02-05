@@ -1,0 +1,23 @@
+[package]
+name = "wasm-rs-async-executor"
+version = "0.1.0-dev"
+authors = ["Yurii Rashkovskii <yrashk@gmail.com>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+description = "Async executor for WebAssembly"
+repository = "https://github.com/wasm-rs/async-executor"
+documentation = "https://docs.rs/wasm-rs-async-executor"
+readme = "README.md"
+keywords = ["wasm", "async"]
+
+[lib]
+crate-type = ["cdylib","lib"]
+
+[dependencies]
+futures = { version = "0.3.12", features = ["std"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1.1.1", features = ["sync"] }

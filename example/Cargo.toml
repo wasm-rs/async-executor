@@ -1,0 +1,14 @@
+[package]
+name = "async-executor-demo"
+version = "0.1.0"
+authors = ["Yurii Rashkovskii <yrashk@gmail.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2.70"
+wasm-rs-async-executor = { path = ".." }
+wasm-rs-dbg = "0.1"
+tokio = { version = "1.1", features = ["macros", "time", "sync"] }
