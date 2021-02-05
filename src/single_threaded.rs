@@ -2,7 +2,7 @@
 //!
 //! This executor works *strictly* in a single-threaded environment. In order to spawn a task, use
 //! [`spawn`]. To run the executor, use [`run`].
-//! 
+//!
 //! There is no need to create an instance of the executor, it's automatically provisioned as a
 //! thread-local instance.
 //!
@@ -137,7 +137,6 @@ mod tests {
         run(None);
     }
 
-
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn test_until() {
@@ -153,5 +152,4 @@ mod tests {
         let _ = sender2.send(());
         run(Some(task2));
     }
-
 }
