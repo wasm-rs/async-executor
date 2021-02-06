@@ -21,3 +21,10 @@ wasm-bindgen-test = "0.3"
 
 [dev-dependencies]
 tokio = { version = "1.1.1", features = ["sync", "rt"] }
+
+[features]
+default = []
+debug = []
+
+[package.metadata.docs.rs]
+all-features = true
