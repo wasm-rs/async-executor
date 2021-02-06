@@ -2,6 +2,10 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Fixed
+
+- Executor can starve if all tasks went pending
+
 ## [0.3.0] - 2021-02-06
 
 ### Added

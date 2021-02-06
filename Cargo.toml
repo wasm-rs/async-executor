@@ -20,4 +20,4 @@ futures = { version = "0.3.12", features = ["std"] }
 wasm-bindgen-test = "0.3"
 
 [dev-dependencies]
-tokio = { version = "1.1.1", features = ["sync"] }
+tokio = { version = "1.1.1", features = ["sync", "rt"] }
