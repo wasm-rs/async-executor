@@ -20,6 +20,7 @@
 //! let _ = sender.send(());
 //! run(None);
 //! ```
+use futures::channel::oneshot;
 use futures::task::{waker_ref, ArcWake};
 use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
@@ -71,9 +72,20 @@ impl Executor {
     where
         F: Future<Output = ()> + 'static,
     {
+        self.spawn_non_static(fut)
+    }
+
+    fn spawn_non_static<F>(&mut self, fut: F) -> Task
+    where
+        F: Future<Output = ()>,
+    {
         let token = self.counter;
         self.counter = self.counter.wrapping_add(1);
-        self.futures.insert(token, Box::new(fut));
+        self.futures.insert(token, unsafe {
+            std::mem::transmute::<_, Box<dyn Future<Output = ()>>>(
+                Box::new(fut) as Box<dyn Future<Output = ()>>
+            )
+        });
         let task = Task { token };
         self.queue.push(Arc::new(task.clone()));
         task
@@ -90,6 +102,25 @@ where
     F: Future<Output = ()> + 'static,
 {
     EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).spawn(fut))
+}
+
+/// Run tasks until completion of a future
+pub fn block_on<F, R>(fut: F) -> Option<R>
+where
+    F: Future<Output = R>,
+{
+    let (sender, mut receiver) = oneshot::channel();
+    let future = async move {
+        let _ = sender.send(fut.await);
+    };
+    // We know that this task is to complete by the end of this function,
+    // so let's pretend it is static
+    let task = EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).spawn_non_static(future));
+    run(Some(task));
+    match receiver.try_recv() {
+        Ok(val) => val,
+        Err(_) => None,
+    }
 }
 
 /// Run the executor
@@ -246,5 +277,17 @@ mod tests {
         assert!(task.token != task_0.token);
         assert_eq!(task.token, 0);
         evict_all();
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    fn blocking_on() {
+        use tokio::sync::*;
+        let (sender, receiver) = oneshot::channel::<u8>();
+        let _task = spawn(async move {
+            let _ = sender.send(1);
+        });
+        let result = block_on(async move { receiver.await.unwrap() });
+        assert_eq!(result.unwrap(), 1);
     }
 }
