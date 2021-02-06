@@ -145,20 +145,22 @@ pub fn run(until: Option<Task>) {
                 let context = &mut Context::from_waker(&*waker);
                 let mut future = unsafe { Pin::new_unchecked(future) };
                 (unsafe { &mut *cell.get() }).executing.replace(task.token);
+                #[allow(clippy::collapsible_if)]
                 if let Poll::Pending = future.as_mut().poll(context) {
                     (unsafe { &mut *cell.get() })
                         .futures
                         .insert(task.token, unsafe { Pin::into_inner_unchecked(future) });
-                } else if let Some(Task { ref token }) = until {
+                } else {
                     #[cfg(feature = "debug")]
                     (unsafe { &mut *cell.get() }).types.remove(&task.token);
-                    if *token == task.token {
-                        (unsafe { &mut *cell.get() }).executing.take();
-                        return;
+
+                    if let Some(Task { ref token }) = until {
+                        if *token == task.token {
+                            (unsafe { &mut *cell.get() }).executing.take();
+                            return;
+                        }
                     }
                 }
-                #[cfg(feature = "debug")]
-                (unsafe { &mut *cell.get() }).types.remove(&task.token);
                 (unsafe { &mut *cell.get() }).executing.take();
             }
         }

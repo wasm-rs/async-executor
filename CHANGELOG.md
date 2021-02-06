@@ -2,6 +2,10 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Fixed
+
+- Type debugging information was removed too early
+
 ## [0.3.2] - 2021-02-06
 
 ### Added
