@@ -154,6 +154,14 @@ pub fn run(until: Option<Task>) {
         if until.is_none() && (unsafe { &mut *cell.get() }).futures.is_empty() {
             return;
         }
+        if (unsafe { &mut *cell.get() }).queue.is_empty()
+            && !(unsafe { &mut *cell.get() }).futures.is_empty()
+        {
+            // the executor is starving
+            for token in (unsafe { &mut *cell.get() }).futures.keys() {
+                (unsafe { &mut *cell.get() }).enqueue(Arc::new(Task { token: *token }));
+            }
+        }
     })
 }
 
@@ -289,5 +297,19 @@ mod tests {
         });
         let result = block_on(async move { receiver.await.unwrap() });
         assert_eq!(result.unwrap(), 1);
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    fn starvation() {
+        use tokio::sync::*;
+        let (sender, receiver) = oneshot::channel();
+        let _task = spawn(async move {
+            tokio::task::yield_now().await;
+            tokio::task::yield_now().await;
+            let _ = sender.send(());
+        });
+        let result = block_on(async move { receiver.await.unwrap() });
+        assert_eq!(result.unwrap(), ());
     }
 }
