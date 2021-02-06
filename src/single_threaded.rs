@@ -191,7 +191,7 @@ pub fn queued_tasks() -> usize {
     EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).queue.len())
 }
 
-/// Returns tokens for all task that haven't completed yet
+/// Returns tokens for all tasks that haven't completed yet
 ///
 /// ## Note
 ///
@@ -199,6 +199,22 @@ pub fn queued_tasks() -> usize {
 #[cfg(feature = "debug")]
 pub fn tokens() -> Vec<Token> {
     EXECUTOR.with(|cell| (unsafe { &*cell.get() }).types.keys().map(|k| *k).collect())
+}
+
+/// Returns tokens for queued tasks
+///
+/// ## Note
+///
+/// Enabled only when `debug` feature is turned on
+#[cfg(feature = "debug")]
+pub fn queued_tokens() -> Vec<Token> {
+    EXECUTOR.with(|cell| {
+        (unsafe { &*cell.get() })
+            .queue
+            .iter()
+            .map(|t| t.token)
+            .collect()
+    })
 }
 
 /// Returns task's future type for a given token
