@@ -320,6 +320,7 @@ mod tests {
         ArcWake::wake_by_ref(&Arc::new(task));
         assert_eq!(tasks(), 0);
         assert_eq!(queued_tasks(), 0);
+        evict_all();
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
@@ -346,6 +347,7 @@ mod tests {
         });
         let result = block_on(async move { receiver.await.unwrap() });
         assert_eq!(result.unwrap(), 1);
+        evict_all();
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), test)]
@@ -360,6 +362,7 @@ mod tests {
         });
         let result = block_on(async move { receiver.await.unwrap() });
         assert_eq!(result.unwrap(), ());
+        evict_all();
     }
 
     #[cfg(feature = "debug")]
