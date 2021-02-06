@@ -2,6 +2,10 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- `single_threaded::block_on` API that allows to block on non-static-lifetime futures
+
 ## [0.2.0] - 2021-02-06
 
 ### Added
