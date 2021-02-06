@@ -72,7 +72,7 @@ impl Executor {
         F: Future<Output = ()> + 'static,
     {
         let token = self.counter;
-        self.counter += 1;
+        self.counter = self.counter.wrapping_add(1);
         self.futures.insert(token, Box::new(fut));
         let task = Task { token };
         self.queue.push(Arc::new(task.clone()));
@@ -148,6 +148,11 @@ pub fn queued_tasks() -> usize {
 /// Evicted tasks won't be able to get re-scheduled when they will be woken up.
 pub fn evict_all() {
     EXECUTOR.with(|cell| unsafe { *cell.get() = Executor::new() });
+}
+
+#[cfg(test)]
+fn set_counter(counter: usize) {
+    EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).counter = counter);
 }
 
 #[cfg(test)]
@@ -227,5 +232,19 @@ mod tests {
         ArcWake::wake_by_ref(&Arc::new(task));
         assert_eq!(tasks(), 0);
         assert_eq!(queued_tasks(), 0);
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    fn token_exhaustion() {
+        set_counter(usize::MAX);
+        // this should be fine anyway
+        let task_0 = spawn(async move {});
+        // this should NOT crash
+        let task = spawn(async move {});
+        // new token should be different and wrap back to the beginning
+        assert!(task.token != task_0.token);
+        assert_eq!(task.token, 0);
+        evict_all();
     }
 }
