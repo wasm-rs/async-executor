@@ -73,7 +73,7 @@ jobs:
 
       - name: Check if it builds
         run: |-
-          wasm-pack test --node
+          wasm-pack test --node -- --all-features
 
   lints:
     name: Lints
