@@ -30,7 +30,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 /// Task token
-type Token = usize;
+pub type Token = usize;
 
 /// Task handle
 #[derive(Clone)]
@@ -48,6 +48,8 @@ impl ArcWake for Task {
 struct Executor {
     counter: Token,
     futures: BTreeMap<Token, Box<dyn Future<Output = ()>>>,
+    #[cfg(feature = "debug")]
+    types: BTreeMap<Token, String>,
     queue: Vec<Arc<Task>>,
     executing: Option<Token>,
 }
@@ -57,6 +59,8 @@ impl Executor {
         Self {
             counter: 0,
             futures: BTreeMap::new(),
+            #[cfg(feature = "debug")]
+            types: BTreeMap::new(),
             queue: vec![],
             executing: None,
         }
@@ -81,6 +85,9 @@ impl Executor {
     {
         let token = self.counter;
         self.counter = self.counter.wrapping_add(1);
+        #[cfg(feature = "debug")]
+        self.types.insert(token, std::any::type_name::<F>().into());
+
         self.futures.insert(token, unsafe {
             std::mem::transmute::<_, Box<dyn Future<Output = ()>>>(
                 Box::new(fut) as Box<dyn Future<Output = ()>>
@@ -143,11 +150,15 @@ pub fn run(until: Option<Task>) {
                         .futures
                         .insert(task.token, unsafe { Pin::into_inner_unchecked(future) });
                 } else if let Some(Task { ref token }) = until {
+                    #[cfg(feature = "debug")]
+                    (unsafe { &mut *cell.get() }).types.remove(&task.token);
                     if *token == task.token {
                         (unsafe { &mut *cell.get() }).executing.take();
                         return;
                     }
                 }
+                #[cfg(feature = "debug")]
+                (unsafe { &mut *cell.get() }).types.remove(&task.token);
                 (unsafe { &mut *cell.get() }).executing.take();
             }
         }
@@ -178,6 +189,28 @@ pub fn tasks() -> usize {
 /// Returns the number of tasks currently in the queue to execute
 pub fn queued_tasks() -> usize {
     EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).queue.len())
+}
+
+/// Returns tokens for all task that haven't completed yet
+///
+/// ## Note
+///
+/// Enabled only when `debug` feature is turned on
+#[cfg(feature = "debug")]
+pub fn tokens() -> Vec<Token> {
+    EXECUTOR.with(|cell| (unsafe { &*cell.get() }).types.keys().map(|k| *k).collect())
+}
+
+/// Returns task's future type for a given token
+///
+/// Useful for introspection into current task list.
+///
+/// ## Note
+///
+/// Enabled only when `debug` feature is turned on
+#[cfg(feature = "debug")]
+pub fn task_type(token: Token) -> Option<&'static String> {
+    EXECUTOR.with(|cell| (unsafe { &*cell.get() }).types.get(&token))
 }
 
 /// Removes all tasks from the executor
@@ -311,5 +344,17 @@ mod tests {
         });
         let result = block_on(async move { receiver.await.unwrap() });
         assert_eq!(result.unwrap(), ());
+    }
+
+    #[cfg(feature = "debug")]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    fn task_type_info() {
+        spawn(futures::future::pending());
+        assert!(task_type(tokens()[0])
+            .unwrap()
+            .contains("future::pending::Pending"));
+        evict_all();
+        assert_eq!(tokens().len(), 0);
     }
 }

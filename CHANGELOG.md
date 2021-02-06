@@ -2,6 +2,10 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- Debugging capabilities in a form of `single_threaded::task_name` and `single_threaded::tokens`
+
 ## [0.3.1] - 2021-02-06
 
 ### Fixed
