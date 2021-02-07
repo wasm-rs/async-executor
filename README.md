@@ -1,6 +1,7 @@
 # Async Executor for WebAssembly
 [![Crate](https://img.shields.io/crates/v/wasm-rs-async-executor.svg)](https://crates.io/crates/wasm-rs-async-executor)
 [![API](https://docs.rs/wasm-rs-async-executor/badge.svg)](https://docs.rs/wasm-rs-async-executor)
+[![Chat](https://img.shields.io/discord/807386653852565545.svg?logo=discord)](https://discord.gg/qbcbjHWjaD)
 
 There are a number of async task executors available in Rust's ecosystem.
 However, most (if not all?) of them rely on primitives that might not be
