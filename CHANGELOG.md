@@ -5,6 +5,7 @@
 ### Fixed
 
 - Type debugging information was removed too early
+- Incorrect future pinning
 
 ## [0.3.2] - 2021-02-06
 
