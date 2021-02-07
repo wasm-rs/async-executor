@@ -4,6 +4,8 @@
 
 ## [0.4.1] - 2021-02-06
 
+The snapshot of 0.4.0's code was published incorrectly, thus yanked. 0.4.1 replaces it.
+
 ## [0.4.0] - 2021-02-06
 
 ### Fixed
