@@ -158,7 +158,6 @@ pub fn run(until: Option<Task>) {
 
                 if let Some(Task { ref token }) = until {
                     if *token == task.token {
-                        (unsafe { &mut *cell.get() }).executing.take();
                         return;
                     }
                 }
