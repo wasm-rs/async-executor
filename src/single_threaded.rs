@@ -47,7 +47,7 @@ impl ArcWake for Task {
 /// Single-threaded executor
 struct Executor {
     counter: Token,
-    futures: BTreeMap<Token, Box<dyn Future<Output = ()>>>,
+    futures: BTreeMap<Token, Pin<Box<dyn Future<Output = ()>>>>,
     #[cfg(feature = "debug")]
     types: BTreeMap<Token, String>,
     queue: Vec<Arc<Task>>,
@@ -89,9 +89,9 @@ impl Executor {
         self.types.insert(token, std::any::type_name::<F>().into());
 
         self.futures.insert(token, unsafe {
-            std::mem::transmute::<_, Box<dyn Future<Output = ()>>>(
-                Box::new(fut) as Box<dyn Future<Output = ()>>
-            )
+            Pin::new_unchecked(std::mem::transmute::<_, Box<dyn Future<Output = ()>>>(
+                Box::new(fut) as Box<dyn Future<Output = ()>>,
+            ))
         });
         let task = Task { token };
         self.queue.push(Arc::new(task.clone()));
@@ -139,29 +139,29 @@ pub fn run(until: Option<Task>) {
         let task = (unsafe { &mut *cell.get() }).queue.pop();
 
         if let Some(task) = task {
-            let future = (unsafe { &mut *cell.get() }).futures.remove(&task.token);
-            if let Some(future) = future {
+            let future = (unsafe { &mut *cell.get() }).futures.get_mut(&task.token);
+            let ready = if let Some(future) = future {
                 let waker = waker_ref(&task);
                 let context = &mut Context::from_waker(&*waker);
-                let mut future = unsafe { Pin::new_unchecked(future) };
+                //let mut future = unsafe { Pin::new_unchecked(future) };
                 (unsafe { &mut *cell.get() }).executing.replace(task.token);
-                #[allow(clippy::collapsible_if)]
-                if let Poll::Pending = future.as_mut().poll(context) {
-                    (unsafe { &mut *cell.get() })
-                        .futures
-                        .insert(task.token, unsafe { Pin::into_inner_unchecked(future) });
-                } else {
-                    #[cfg(feature = "debug")]
-                    (unsafe { &mut *cell.get() }).types.remove(&task.token);
+                let ready = matches!(future.as_mut().poll(context), Poll::Ready(_));
+                (unsafe { &mut *cell.get() }).executing.take();
+                ready
+            } else {
+                false
+            };
+            if ready {
+                (unsafe { &mut *cell.get() }).futures.remove(&task.token);
+                #[cfg(feature = "debug")]
+                (unsafe { &mut *cell.get() }).types.remove(&task.token);
 
-                    if let Some(Task { ref token }) = until {
-                        if *token == task.token {
-                            (unsafe { &mut *cell.get() }).executing.take();
-                            return;
-                        }
+                if let Some(Task { ref token }) = until {
+                    if *token == task.token {
+                        (unsafe { &mut *cell.get() }).executing.take();
+                        return;
                     }
                 }
-                (unsafe { &mut *cell.get() }).executing.take();
             }
         }
         if until.is_none() && (unsafe { &mut *cell.get() }).futures.is_empty() {
@@ -182,9 +182,7 @@ pub fn run(until: Option<Task>) {
 pub fn tasks() -> usize {
     EXECUTOR.with(|cell| {
         let executor = unsafe { &mut *cell.get() };
-        // if a task is currently executing, it's out of `.futures`, so we need
-        // to increment this by one
-        executor.futures.len() + (if executor.executing.is_some() { 1 } else { 0 })
+        executor.futures.len()
     })
 }
 
