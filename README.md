@@ -12,7 +12,7 @@ Include this dependency in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-wasm-rs-async-executor = "0.4.0"
+wasm-rs-async-executor = "0.4.1"
 ```
 
 ## License
