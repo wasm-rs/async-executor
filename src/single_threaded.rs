@@ -207,15 +207,8 @@ extern "C" {
 /// JavaScript event loop to proceed.
 ///
 /// This function is available under `cooperative` feature gate.
-///
-/// ## Caution
-///
-/// This is an **unsafe** function because it relies on the caling code (or, rather, it's author)
-/// to ensure that all of the spawned tasks are in fact `'static` as they can't contain any stack
-/// references. The tasks must own their data.
-///
 #[cfg(feature = "cooperative")]
-pub unsafe fn run_cooperatively(until: Option<Task>) {
+pub fn run_cooperatively(until: Option<Task>) {
     if !run_max(until.clone(), Some(1)) {
         set_timeout(Closure::once_into_js(|| run_cooperatively(until)));
     }

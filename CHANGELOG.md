@@ -2,9 +2,14 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Changed
+
+- `single_threaded::run_cooperatively` is no longer marked `unsafe`
+  (but this is not a guarantee just yet)
+
 ## [0.5.0] - 2021-02-08
 
-## Added
+### Added
 
 - A way to run the executor cooperatively with the host's JavaScript environment
   (`single_threaded::run_cooperatively`)
