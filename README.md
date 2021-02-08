@@ -13,7 +13,7 @@ Include this dependency in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-wasm-rs-async-executor = "0.5.0"
+wasm-rs-async-executor = "0.5.1"
 ```
 
 ## Notes
