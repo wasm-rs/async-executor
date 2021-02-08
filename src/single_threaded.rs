@@ -28,6 +28,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+#[cfg(feature = "cooperative")]
+use wasm_bindgen::prelude::*;
 
 /// Task token
 pub type Token = usize;
@@ -135,7 +137,21 @@ where
 /// If `until` is `None`, it will run until all tasks have been completed. Otherwise, it'll wait
 /// until passed task is complete.
 pub fn run(until: Option<Task>) {
+    run_max(until, None);
+}
+
+// Returns `true` if `until` task completed, or there was no `until` task and every task was
+// completed.
+//
+// It returns `false` if `max` was reached
+fn run_max(until: Option<Task>, max: Option<usize>) -> bool {
+    let mut counter = 0;
     EXECUTOR.with(|cell| loop {
+        if let Some(c) = max {
+            if c == counter {
+                return false;
+            }
+        }
         let task = (unsafe { &mut *cell.get() }).queue.pop();
 
         if let Some(task) = task {
@@ -143,7 +159,6 @@ pub fn run(until: Option<Task>) {
             let ready = if let Some(future) = future {
                 let waker = waker_ref(&task);
                 let context = &mut Context::from_waker(&*waker);
-                //let mut future = unsafe { Pin::new_unchecked(future) };
                 (unsafe { &mut *cell.get() }).executing.replace(task.token);
                 let ready = matches!(future.as_mut().poll(context), Poll::Ready(_));
                 (unsafe { &mut *cell.get() }).executing.take();
@@ -158,13 +173,13 @@ pub fn run(until: Option<Task>) {
 
                 if let Some(Task { ref token }) = until {
                     if *token == task.token {
-                        return;
+                        return true;
                     }
                 }
             }
         }
         if until.is_none() && (unsafe { &mut *cell.get() }).futures.is_empty() {
-            return;
+            return true;
         }
         if (unsafe { &mut *cell.get() }).queue.is_empty()
             && !(unsafe { &mut *cell.get() }).futures.is_empty()
@@ -174,7 +189,36 @@ pub fn run(until: Option<Task>) {
                 (unsafe { &mut *cell.get() }).enqueue(Arc::new(Task { token: *token }));
             }
         }
+        counter += 1
     })
+}
+
+#[cfg(feature = "cooperative")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_name = "setTimeout")]
+    fn set_timeout(_: JsValue);
+}
+
+/// Runs the scheduled cooperatively with JavaScript environment
+///
+/// This function will return immediately after one iterator of task queue processing
+/// but it will schedule its own execution if the desired outcome wasn't reached, allowing
+/// JavaScript event loop to proceed.
+///
+/// This function is available under `cooperative` feature gate.
+///
+/// ## Caution
+///
+/// This is an **unsafe** function because it relies on the caling code (or, rather, it's author)
+/// to ensure that all of the spawned tasks are in fact `'static` as they can't contain any stack
+/// references. The tasks must own their data.
+///
+#[cfg(feature = "cooperative")]
+pub unsafe fn run_cooperatively(until: Option<Task>) {
+    if !run_max(until.clone(), Some(1)) {
+        set_timeout(Closure::once_into_js(|| run_cooperatively(until)));
+    }
 }
 
 /// Returns the number of tasks currently registered with the executor

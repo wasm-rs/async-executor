@@ -2,6 +2,11 @@
 
 ## [Unreleased] - ReleaseDate
 
+## Added
+
+- A way to run the executor cooperatively with the host's JavaScript environment
+  (`single_threaded::run_cooperatively`)
+
 ## [0.4.1] - 2021-02-06
 
 The snapshot of 0.4.0's code was published incorrectly, thus yanked. 0.4.1 replaces it.
