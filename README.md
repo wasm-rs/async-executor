@@ -16,6 +16,15 @@ Include this dependency in your `Cargo.toml`:
 wasm-rs-async-executor = "0.5.0"
 ```
 
+## Notes
+
+Please note that this library hasn't received much analysis in terms of safety
+and soundness. Some of the caveats related to that might never be resolved
+completely. This is an ongoing development and the maintainer is aware of
+potential pitfalls. Any productive reports of unsafeties or unsoundness are
+welcomed (whether they can be resolved or simply walled with `unsafe` for end-user
+to note).
+
 ## License
 
 Licensed under either of
