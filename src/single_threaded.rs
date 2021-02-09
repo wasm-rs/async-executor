@@ -137,14 +137,14 @@ where
 /// If `until` is `None`, it will run until all tasks have been completed. Otherwise, it'll wait
 /// until passed task is complete.
 pub fn run(until: Option<Task>) {
-    run_max(until, None);
+    run_max(&until, None);
 }
 
 // Returns `true` if `until` task completed, or there was no `until` task and every task was
 // completed.
 //
 // It returns `false` if `max` was reached
-fn run_max(until: Option<Task>, max: Option<usize>) -> bool {
+fn run_max(until: &Option<Task>, max: Option<usize>) -> bool {
     let mut counter = 0;
     EXECUTOR.with(|cell| loop {
         if let Some(c) = max {
@@ -209,7 +209,7 @@ extern "C" {
 /// This function is available under `cooperative` feature gate.
 #[cfg(feature = "cooperative")]
 pub fn run_cooperatively(until: Option<Task>) {
-    if !run_max(until.clone(), Some(1)) {
+    if !run_max(&until, Some(1)) {
         set_timeout(Closure::once_into_js(|| run_cooperatively(until)));
     }
 }
