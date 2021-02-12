@@ -206,11 +206,42 @@ extern "C" {
 /// but it will schedule its own execution if the desired outcome wasn't reached, allowing
 /// JavaScript event loop to proceed.
 ///
+/// If it is desirable to perform a computation after the task queue has been exhausted without
+/// resorting to waiting on completion of all relevant tasks, `and_then` parameter is used
+/// to pass a callback with a function to be called once the task queue has been exhausted.
+///
 /// This function is available under `cooperative` feature gate.
+///
+/// ## Note
+///
+/// On target architectures other than `wasm32` this function will call [`run`] and then
+/// invoke `and_then` callback if provided.
 #[cfg(feature = "cooperative")]
-pub fn run_cooperatively(until: Option<Task>) {
+#[cfg(target_arch = "wasm32")]
+pub fn run_cooperatively<F>(until: Option<Task>, mut and_then: Option<F>)
+where
+    F: 'static + FnOnce(),
+{
     if !run_max(&until, Some(1)) {
-        set_timeout(Closure::once_into_js(|| run_cooperatively(until)));
+        set_timeout(Closure::once_into_js(|| {
+            run_cooperatively(until, and_then);
+        }));
+    } else {
+        if let Some(f) = and_then.take() {
+            f();
+        }
+    }
+}
+
+#[cfg(feature = "cooperative")]
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_cooperatively<F>(until: Option<Task>, mut and_then: Option<F>)
+where
+    F: 'static + FnOnce(),
+{
+    run(until);
+    if let Some(f) = and_then.take() {
+        f();
     }
 }
 
@@ -411,5 +442,25 @@ mod tests {
             .contains("future::pending::Pending"));
         evict_all();
         assert_eq!(tokens().len(), 0);
+    }
+
+    #[cfg(feature = "cooperative")]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    fn cooperative_execution() {
+        use tokio::sync::*;
+        let (sender, receiver) = oneshot::channel();
+        spawn(async move {
+            let _ = sender.send(());
+        });
+        run_cooperatively(
+            None,
+            Some(|| {
+                spawn(async move {
+                    assert_eq!(receiver.await.unwrap(), ());
+                });
+                run(None);
+            }),
+        );
     }
 }

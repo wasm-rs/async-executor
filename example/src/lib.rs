@@ -29,5 +29,10 @@ pub fn start() {
     });
     dbg!("starting executor, sending to task1");
     let _ = sender1.send(());
-    executor::run_cooperatively(Some(task2));
+    executor::run_cooperatively(
+        Some(task2),
+        Some(|| {
+            dbg!("Done");
+        }),
+    );
 }
