@@ -16,6 +16,9 @@ Include this dependency in your `Cargo.toml`:
 wasm-rs-async-executor = "0.5.1"
 ```
 
+`wasm-rs-async-executor` is expected to work on stable Rust, 1.49.0 and higher up. It *may* also
+work on earlier versions. This hasn't been tested yet.
+
 ## Notes
 
 Please note that this library hasn't received much analysis in terms of safety

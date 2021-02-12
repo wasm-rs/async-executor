@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: ['1.49.0', 'stable', 'nightly']
+        toolchain: ['1.49.0', '1.50.0', 'stable', 'nightly']
 
     steps:
       - name: Checkout sources
