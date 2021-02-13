@@ -125,8 +125,7 @@ where
 
 /// Run tasks until completion of a future
 ///
-/// If `cooperative` feature is enabled, yielding to the environment will
-/// not be allowed and the function may block forever.
+/// If `cooperative` feature is enabled, given future should have `'static` lifetime.
 #[cfg(not(feature = "cooperative"))]
 pub fn block_on<F, R>(fut: F) -> Option<R>
 where
@@ -332,40 +331,43 @@ mod cooperative {
         }
     }
 
-    /// Yields a future to be scheduled to the JavaScript environment using `setTimeout` function
+    /// Yields the JavaScript environment using `setTimeout` function
     ///
-    /// It will be ready once the enclosed future is ready.
+    /// This will return control to the executor once JavaScript envrionment
+    /// invokes the `setTimeout` callback
     ///
     /// Only available under `cooperative` feature gate
     ///
     /// ## Caution
     ///
     /// Specifying a non-zero timeout duration will result in the executor not
-    /// being called for that duration or longer. In most cases, no delay is advisable.
-    pub fn yield_timeout<F, O>(duration: Option<Duration>, future: F) -> impl Future<Output = O>
-    where
-        F: Future<Output = O> + 'static,
-    {
+    /// being called for that duration or longer.
+    pub fn yield_timeout(duration: Duration) -> impl Future<Output = ()> {
         TimeoutYield {
-            future,
-            duration,
+            future: futures::future::ready(()),
+            duration: Some(duration),
             output: None,
             yielded: false,
             done: false,
         }
     }
 
-    /// Yields to the JavaScript environment using `setTimeout` function
+    /// Yields a future to the JavaScript environment using `setTimeout` function
     ///
-    /// This will return control to the executor once JavaScript envrionment
-    /// invokes the `setTimeout` callback
+    /// This future will be ready after yielding and when the enclosed future is ready.
     ///
     /// Only available under `cooperative` feature gate
     pub fn yield_async<F, O>(future: F) -> impl Future<Output = O>
     where
         F: Future<Output = O> + 'static,
     {
-        yield_timeout(None, future)
+        TimeoutYield {
+            future,
+            duration: None,
+            output: None,
+            yielded: false,
+            done: false,
+        }
     }
 
     #[cfg(feature = "cooperative-browser")]

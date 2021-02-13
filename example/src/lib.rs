@@ -50,12 +50,12 @@ pub fn start() {
         let response: web_sys::Response = executor::yield_async(fut).await.unwrap().into();
         let text_fut: JsFuture = response.text().unwrap().into();
         dbg!("task 2 will intentionally delay executor by 1 second");
-        let text: String =
-            executor::yield_timeout(Some(std::time::Duration::from_secs(1)), text_fut)
-                .await
-                .unwrap()
-                .as_string()
-                .unwrap();
+        executor::yield_timeout(std::time::Duration::from_secs(1)).await;
+        let text: String = executor::yield_async(text_fut)
+            .await
+            .unwrap()
+            .as_string()
+            .unwrap();
         dbg!(text);
         dbg!("task 2 done");
     });
