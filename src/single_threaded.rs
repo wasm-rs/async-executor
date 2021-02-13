@@ -237,8 +237,10 @@ fn run_internal() -> bool {
 mod cooperative {
     use super::{run_internal, EXIT_LOOP};
     use pin_project::pin_project;
+    use std::cell::UnsafeCell;
     use std::future::Future;
     use std::pin::Pin;
+    use std::sync::Arc;
     use std::task::{Context, Poll};
     use std::time::Duration;
     use wasm_bindgen::prelude::*;
@@ -254,26 +256,20 @@ mod cooperative {
 
     }
 
-    enum YieldKind {
-        Timeout(Option<Duration>),
-        #[cfg(feature = "cooperative-browser")]
-        AnimationFrame,
-    }
-
     #[pin_project]
-    struct Yield<F, O>
+    struct TimeoutYield<F, O>
     where
         F: Future<Output = O> + 'static,
     {
-        kind: YieldKind,
         yielded: bool,
+        duration: Option<Duration>,
         done: bool,
         output: Option<O>,
         #[pin]
         future: F,
     }
 
-    impl<F, O> Future for Yield<F, O>
+    impl<F, O> Future for TimeoutYield<F, O>
     where
         F: Future<Output = O> + 'static,
     {
@@ -294,17 +290,14 @@ mod cooperative {
                 (_, result @ Poll::Pending) | (true, result) => {
                     *this.yielded = true;
                     if cfg!(target_arch = "wasm32") {
-                        let js = Closure::once_into_js(move || {
-                            run_internal();
-                        });
-                        match this.kind {
-                            YieldKind::Timeout(duration) => set_timeout(
-                                js,
-                                duration.unwrap_or(Duration::from_millis(0)).as_millis() as u32,
-                            ),
-                            #[cfg(feature = "cooperative-browser")]
-                            YieldKind::AnimationFrame => request_animation_frame(js),
-                        }
+                        set_timeout(
+                            Closure::once_into_js(move || {
+                                run_internal();
+                            }),
+                            this.duration
+                                .unwrap_or(Duration::from_millis(0))
+                                .as_millis() as u32,
+                        );
                         EXIT_LOOP.with(|cell| unsafe { *cell.get() = true });
                     }
                     if let Poll::Ready(output) = result {
@@ -335,33 +328,71 @@ mod cooperative {
     where
         F: Future<Output = O> + 'static,
     {
-        Yield {
-            kind: YieldKind::Timeout(duration),
+        TimeoutYield {
             future,
+            duration,
             output: None,
             yielded: false,
             done: false,
         }
     }
 
-    /// Yields a future to be scheduled to the browser environment using `requestAnimationFrame`
+    #[cfg(feature = "cooperative-browser")]
+    #[pin_project]
+    struct AnimationFrameYield {
+        yielded: bool,
+        done: bool,
+        output: Arc<UnsafeCell<Option<f64>>>,
+    }
+
+    #[cfg(feature = "cooperative-browser")]
+    impl Future for AnimationFrameYield {
+        type Output = f64;
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            if self.done {
+                return Poll::Pending;
+            }
+            let should_yield = !self.yielded;
+            let this = self.project();
+            if *this.yielded && unsafe { this.output.get().as_ref() }.is_some() {
+                // it's ok to unwrap here because we check `is_some` above
+                let output = unsafe { &mut *this.output.get() }.take().unwrap();
+                *this.done = true;
+                return Poll::Ready(output);
+            }
+
+            if should_yield {
+                *this.yielded = true;
+                if cfg!(target_arch = "wasm32") {
+                    let output = this.output.clone();
+                    request_animation_frame(Closure::once_into_js(move |timestamp| {
+                        unsafe { &mut *output.get() }.replace(timestamp);
+                        run_internal();
+                    }));
+                    EXIT_LOOP.with(|cell| unsafe { *cell.get() = true });
+                }
+            }
+
+            cx.waker().wake_by_ref();
+
+            Poll::Pending
+        }
+    }
+
+    /// Yields to the browser using `requestAnimationFrame`
     ///
     /// This allows to yield to the browser until the next animation frame is requested to be
     /// rendered.
     ///
-    /// It will be ready once the enclosed future is ready.
+    /// It will output high resolution timer as
+    /// [requestAnimationFrame](https://developer.mozilla.org/en-US/docs/Web/API/window/requestAnimationFrame)
     ///
     /// Only available under `cooperative-browser` feature gate
     ///
     #[cfg(feature = "cooperative-browser")]
-    pub fn yield_animation_frame<F, O>(future: F) -> impl Future<Output = O>
-    where
-        F: Future<Output = O> + 'static,
-    {
-        Yield {
-            kind: YieldKind::AnimationFrame,
-            future,
-            output: None,
+    pub fn yield_animation_frame() -> impl Future<Output = f64> {
+        AnimationFrameYield {
+            output: Arc::new(UnsafeCell::new(None)),
             yielded: false,
             done: false,
         }

@@ -25,7 +25,7 @@ pub fn start() {
         while ctr < 255 {
             element.set_inner_html(&format!("{}", ctr));
             ctr = ctr.wrapping_add(1);
-            executor::yield_animation_frame(async {}).await;
+            executor::yield_animation_frame().await;
         }
     });
     let task1x = executor::spawn(async move {
@@ -36,11 +36,9 @@ pub fn start() {
             .get_element_by_id("display1")
             .unwrap();
 
-        let mut ctr = 0u8;
         loop {
-            element.set_inner_html(&format!("{}", ctr));
-            ctr = ctr.wrapping_add(1);
-            executor::yield_animation_frame(async {}).await;
+            let ts = executor::yield_animation_frame().await;
+            element.set_inner_html(&format!("{}", ts));
         }
     });
 
