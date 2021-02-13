@@ -165,7 +165,10 @@ where
 /// Run the executor
 ///
 /// If `until` is `None`, it will run until all tasks have been completed. Otherwise, it'll wait
-/// until passed task is complete.
+/// until passed task is complete, or unless a `cooperative` feature has been enabled and control
+/// has been yielded to the environment. In this case the function will return but the environment
+/// might schedule further execution of this executor in the background after termination of the
+/// function enclosing invocation of this [`run`]
 pub fn run(until: Option<Task>) {
     UNTIL.with(|cell| unsafe { *cell.get() = until });
     run_internal();
