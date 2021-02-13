@@ -278,6 +278,10 @@ mod cooperative {
         #[wasm_bindgen(js_name = "setTimeout")]
         fn set_timeout(_: JsValue, delay: u32);
 
+        #[cfg(feature = "requestIdleCallback")]
+        #[wasm_bindgen(js_name = "requestIdleCallback")]
+        fn request_idle_callback(_: JsValue, options: &JsValue);
+
         #[cfg(feature = "cooperative-browser")]
         #[wasm_bindgen(js_name = "requestAnimationFrame")]
         fn request_animation_frame(_: JsValue);
@@ -460,6 +464,79 @@ mod cooperative {
     #[cfg(feature = "cooperative-browser")]
     pub fn yield_animation_frame() -> impl Future<Output = f64> {
         AnimationFrameYield {
+            output: Arc::new(UnsafeCell::new(None)),
+            yielded: false,
+            done: false,
+        }
+    }
+
+    #[cfg(feature = "requestIdleCallback")]
+    #[pin_project]
+    struct UntilIdleYield {
+        timeout: Option<Duration>,
+        yielded: bool,
+        done: bool,
+        output: Arc<UnsafeCell<Option<web_sys::IdleDeadline>>>,
+    }
+
+    #[cfg(feature = "requestIdleCallback")]
+    impl Future for UntilIdleYield {
+        type Output = web_sys::IdleDeadline;
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            if self.done {
+                return Poll::Pending;
+            }
+            let should_yield = !self.yielded;
+            let this = self.project();
+            if *this.yielded && unsafe { this.output.get().as_ref() }.is_some() {
+                // it's ok to unwrap here because we check `is_some` above
+                let output = unsafe { &mut *this.output.get() }.take().unwrap();
+                *this.done = true;
+                return Poll::Ready(output);
+            }
+
+            if should_yield {
+                *this.yielded = true;
+                if cfg!(target_arch = "wasm32") {
+                    let map = js_sys::Map::new();
+                    if let Some(timeout) = this.timeout {
+                        map.set(&"timeout".into(), &(timeout.as_millis() as u32).into());
+                    }
+                    let options =
+                        js_sys::Object::from_entries(&map).unwrap_or(js_sys::Object::new());
+                    let output = this.output.clone();
+                    request_idle_callback(
+                        Closure::once_into_js(move |timestamp| {
+                            unsafe { &mut *output.get() }.replace(timestamp);
+                            run_internal();
+                        }),
+                        &options.into(),
+                    );
+                    EXIT_LOOP.with(|cell| unsafe { *cell.get() = true });
+                }
+            }
+
+            cx.waker().wake_by_ref();
+
+            Poll::Pending
+        }
+    }
+
+    /// Yields to the browser using `requestIdleCallback`
+    ///
+    /// This allows to yield to the browser until browser is delayed.
+    ///
+    /// It will output [`web_sys::IdleDeadline`] as per
+    /// [requestIdleCallback](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestIdleCallback)
+    ///
+    /// Only available under `requestIdleCallback` feature gate
+    ///
+    #[cfg(feature = "requestIdleCallback")]
+    pub fn yield_until_idle(
+        timeout: Option<Duration>,
+    ) -> impl Future<Output = web_sys::IdleDeadline> {
+        UntilIdleYield {
+            timeout,
             output: Arc::new(UnsafeCell::new(None)),
             yielded: false,
             done: false,

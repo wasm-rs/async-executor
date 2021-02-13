@@ -60,6 +60,12 @@ pub fn start() {
         dbg!(text);
         dbg!("task 2 done");
     });
+
+    let task3 = executor::spawn(async move {
+        dbg!("task 3 awaiting idle browser");
+        executor::yield_until_idle(None).await;
+        dbg!("task 3 is done");
+    });
     dbg!("starting executor, sending to task1");
     let _ = sender1.send(());
     executor::run(Some(task1));

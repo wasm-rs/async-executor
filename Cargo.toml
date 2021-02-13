@@ -18,6 +18,7 @@ futures = { version = "0.3.12", features = ["std"] }
 js-sys = { version = "0.3.47", optional = true }
 pin-project = { version = "1.0.5", optional = true }
 wasm-bindgen = { version = "0.2.70", optional = true }
+web-sys = { version = "0.3.47", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3"
@@ -30,6 +31,9 @@ default = []
 debug = []
 cooperative = ["js-sys", "wasm-bindgen", "pin-project"]
 cooperative-browser = ["cooperative"]
+# Experimental:
+# https://developer.mozilla.org/en-US/docs/Web/API/Window/requestIdleCallback
+requestIdleCallback = ["cooperative-browser", "web-sys/IdleDeadline"]
 
 [package.metadata.docs.rs]
 all-features = true

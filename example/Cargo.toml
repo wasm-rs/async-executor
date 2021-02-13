@@ -9,7 +9,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 wasm-bindgen = "0.2.70"
-wasm-rs-async-executor = { path = "..", features = ["cooperative-browser", "debug"] }
+wasm-rs-async-executor = { path = "..", features = ["cooperative-browser", "debug", "requestIdleCallback"] }
 wasm-rs-dbg = "0.1"
 tokio = { version = "1.1", features = ["macros", "time", "sync"] }
 wasm-bindgen-futures = "0.4.20"
