@@ -4,7 +4,7 @@
 
 ### Added
 
-- `single_threaded::yield_timeout` and `single_threaded::yield_animation_frame` API
+- `single_threaded::yield_timeout`, `single_threaded::yield_async` and `single_threaded::yield_animation_frame` API
   to orchestrate different types of yielding to the environment
 
 ### Removed

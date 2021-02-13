@@ -337,6 +337,19 @@ mod cooperative {
         }
     }
 
+    /// Yields to the JavaScript environment using `setTimeout` function
+    ///
+    /// This will return control to the executor once JavaScript envrionment
+    /// invokes the `setTimeout` callback
+    ///
+    /// Only available under `cooperative` feature gate
+    pub fn yield_async<F, O>(future: F) -> impl Future<Output = O>
+    where
+        F: Future<Output = O> + 'static,
+    {
+        yield_timeout(None, future)
+    }
+
     #[cfg(feature = "cooperative-browser")]
     #[pin_project]
     struct AnimationFrameYield {
