@@ -16,6 +16,7 @@ crate-type = ["cdylib","lib"]
 [dependencies]
 futures = { version = "0.3.12", features = ["std"] }
 js-sys = { version = "0.3.47", optional = true }
+pin-project = { version = "1.0.5", optional = true }
 wasm-bindgen = { version = "0.2.70", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
@@ -27,7 +28,8 @@ tokio = { version = "1.1.1", features = ["sync", "rt"] }
 [features]
 default = []
 debug = []
-cooperative = ["js-sys", "wasm-bindgen"]
+cooperative = ["js-sys", "wasm-bindgen", "pin-project"]
+cooperative-browser = ["cooperative"]
 
 [package.metadata.docs.rs]
 all-features = true

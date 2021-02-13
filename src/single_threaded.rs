@@ -28,8 +28,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-#[cfg(feature = "cooperative")]
-use wasm_bindgen::prelude::*;
 
 /// Task token
 pub type Token = usize;
@@ -105,6 +103,14 @@ thread_local! {
      static EXECUTOR: UnsafeCell<Executor> = UnsafeCell::new(Executor::new()) ;
 }
 
+thread_local! {
+     static UNTIL: UnsafeCell<Option<Task>> = UnsafeCell::new(None) ;
+}
+
+thread_local! {
+     static EXIT_LOOP: UnsafeCell<bool> = UnsafeCell::new(false) ;
+}
+
 /// Spawn a task
 pub fn spawn<F>(fut: F) -> Task
 where
@@ -137,21 +143,17 @@ where
 /// If `until` is `None`, it will run until all tasks have been completed. Otherwise, it'll wait
 /// until passed task is complete.
 pub fn run(until: Option<Task>) {
-    run_max(&until, None);
+    UNTIL.with(|cell| unsafe { *cell.get() = until });
+    run_internal();
 }
 
 // Returns `true` if `until` task completed, or there was no `until` task and every task was
 // completed.
 //
-// It returns `false` if `max` was reached
-fn run_max(until: &Option<Task>, max: Option<usize>) -> bool {
-    let mut counter = 0;
+// Returns `false` if loop exit was requested
+fn run_internal() -> bool {
+    let until = UNTIL.with(|cell| unsafe { &*cell.get() });
     EXECUTOR.with(|cell| loop {
-        if let Some(c) = max {
-            if c == counter {
-                return false;
-            }
-        }
         let task = (unsafe { &mut *cell.get() }).queue.pop();
 
         if let Some(task) = task {
@@ -181,6 +183,21 @@ fn run_max(until: &Option<Task>, max: Option<usize>) -> bool {
         if until.is_none() && (unsafe { &mut *cell.get() }).futures.is_empty() {
             return true;
         }
+
+        let exit_requested = EXIT_LOOP.with(|cell| {
+            let v = cell.get();
+            let result = unsafe { *v };
+            // Clear the flag
+            unsafe {
+                *v = false;
+            }
+            result
+        });
+
+        if exit_requested {
+            return false;
+        }
+
         if (unsafe { &mut *cell.get() }).queue.is_empty()
             && !(unsafe { &mut *cell.get() }).futures.is_empty()
         {
@@ -189,30 +206,146 @@ fn run_max(until: &Option<Task>, max: Option<usize>) -> bool {
                 (unsafe { &mut *cell.get() }).enqueue(Arc::new(Task { token: *token }));
             }
         }
-        counter += 1
     })
 }
 
 #[cfg(feature = "cooperative")]
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_name = "setTimeout")]
-    fn set_timeout(_: JsValue);
-}
+mod cooperative {
+    use super::{run_internal, EXIT_LOOP};
+    use pin_project::pin_project;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use std::time::Duration;
+    use wasm_bindgen::prelude::*;
 
-/// Runs the scheduled cooperatively with JavaScript environment
-///
-/// This function will return immediately after one iterator of task queue processing
-/// but it will schedule its own execution if the desired outcome wasn't reached, allowing
-/// JavaScript event loop to proceed.
-///
-/// This function is available under `cooperative` feature gate.
-#[cfg(feature = "cooperative")]
-pub fn run_cooperatively(until: Option<Task>) {
-    if !run_max(&until, Some(1)) {
-        set_timeout(Closure::once_into_js(|| run_cooperatively(until)));
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(js_name = "setTimeout")]
+        fn set_timeout(_: JsValue, delay: u32);
+
+        #[cfg(feature = "cooperative-browser")]
+        #[wasm_bindgen(js_name = "requestAnimationFrame")]
+        fn request_animation_frame(_: JsValue);
+
+    }
+
+    enum YieldKind {
+        Timeout(Option<Duration>),
+        #[cfg(feature = "cooperative-browser")]
+        AnimationFrame,
+    }
+
+    #[pin_project]
+    struct Yield<F, O>
+    where
+        F: Future<Output = O> + 'static,
+    {
+        kind: YieldKind,
+        yielded: bool,
+        done: bool,
+        output: Option<O>,
+        #[pin]
+        future: F,
+    }
+
+    impl<F, O> Future for Yield<F, O>
+    where
+        F: Future<Output = O> + 'static,
+    {
+        type Output = O;
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            if self.done {
+                return Poll::Pending;
+            }
+            let should_yield = !self.yielded;
+            let this = self.project();
+            if *this.yielded && this.output.is_some() {
+                // it's ok to unwrap here because we check `is_some` above
+                let output = this.output.take().unwrap();
+                *this.done = true;
+                return Poll::Ready(output);
+            }
+            match (should_yield, this.future.poll(cx)) {
+                (_, result @ Poll::Pending) | (true, result) => {
+                    *this.yielded = true;
+                    if cfg!(target_arch = "wasm32") {
+                        let js = Closure::once_into_js(move || {
+                            run_internal();
+                        });
+                        match this.kind {
+                            YieldKind::Timeout(duration) => set_timeout(
+                                js,
+                                duration.unwrap_or(Duration::from_millis(0)).as_millis() as u32,
+                            ),
+                            #[cfg(feature = "cooperative-browser")]
+                            YieldKind::AnimationFrame => request_animation_frame(js),
+                        }
+                        EXIT_LOOP.with(|cell| unsafe { *cell.get() = true });
+                    }
+                    if let Poll::Ready(output) = result {
+                        this.output.replace(output);
+                    }
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                }
+                (false, Poll::Ready(output)) => {
+                    *this.done = true;
+                    Poll::Ready(output)
+                }
+            }
+        }
+    }
+
+    /// Yields a future to be scheduled to the JavaScript environment using `setTimeout` function
+    ///
+    /// It will be ready once the enclosed future is ready.
+    ///
+    /// Only available under `cooperative` feature gate
+    ///
+    /// ## Caution
+    ///
+    /// Specifying a non-zero timeout duration will result in the executor not
+    /// being called for that duration or longer. In most cases, no delay is advisable.
+    pub fn yield_timeout<F, O>(duration: Option<Duration>, future: F) -> impl Future<Output = O>
+    where
+        F: Future<Output = O> + 'static,
+    {
+        Yield {
+            kind: YieldKind::Timeout(duration),
+            future,
+            output: None,
+            yielded: false,
+            done: false,
+        }
+    }
+
+    /// Yields a future to be scheduled to the browser environment using `requestAnimationFrame`
+    ///
+    /// This allows to yield to the browser until the next animation frame is requested to be
+    /// rendered.
+    ///
+    /// It will be ready once the enclosed future is ready.
+    ///
+    /// Only available under `cooperative-browser` feature gate
+    ///
+    #[cfg(feature = "cooperative-browser")]
+    pub fn yield_animation_frame<F, O>(future: F) -> impl Future<Output = O>
+    where
+        F: Future<Output = O> + 'static,
+    {
+        Yield {
+            kind: YieldKind::AnimationFrame,
+            future,
+            output: None,
+            yielded: false,
+            done: false,
+        }
     }
 }
+
+#[cfg(feature = "cooperative")]
+pub use cooperative::*;
 
 /// Returns the number of tasks currently registered with the executor
 pub fn tasks() -> usize {

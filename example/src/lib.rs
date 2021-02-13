@@ -14,20 +14,54 @@ pub fn start() {
         let _ = receiver1.await;
         dbg!("task 1 -> task 2");
         let _ = sender2.send(());
-        dbg!("task 1 done");
+        let element = web_sys::window()
+            .unwrap()
+            .document()
+            .unwrap()
+            .get_element_by_id("display")
+            .unwrap();
+
+        let mut ctr = 0u8;
+        while ctr < 255 {
+            element.set_inner_html(&format!("{}", ctr));
+            ctr = ctr.wrapping_add(1);
+            executor::yield_animation_frame(async {}).await;
+        }
     });
+    let task1x = executor::spawn(async move {
+        let element = web_sys::window()
+            .unwrap()
+            .document()
+            .unwrap()
+            .get_element_by_id("display1")
+            .unwrap();
+
+        let mut ctr = 0u8;
+        loop {
+            element.set_inner_html(&format!("{}", ctr));
+            ctr = ctr.wrapping_add(1);
+            executor::yield_animation_frame(async {}).await;
+        }
+    });
+
     let task2 = executor::spawn(async move {
         dbg!("task 2 awaiting");
         let _ = receiver2.await;
         dbg!("task 2 fetching /");
         let fut: JsFuture = web_sys::window().unwrap().fetch_with_str("/").into();
-        let response: web_sys::Response = fut.await.unwrap().into();
+        let response: web_sys::Response = executor::yield_timeout(None, fut).await.unwrap().into();
         let text_fut: JsFuture = response.text().unwrap().into();
-        let text: String = text_fut.await.unwrap().as_string().unwrap();
+        dbg!("task 2 will intentionally delay executor by 1 second");
+        let text: String =
+            executor::yield_timeout(Some(std::time::Duration::from_secs(1)), text_fut)
+                .await
+                .unwrap()
+                .as_string()
+                .unwrap();
         dbg!(text);
         dbg!("task 2 done");
     });
     dbg!("starting executor, sending to task1");
     let _ = sender1.send(());
-    executor::run_cooperatively(Some(task2));
+    executor::run(Some(task1));
 }
