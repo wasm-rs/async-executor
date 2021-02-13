@@ -2,6 +2,16 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- `single_threaded::yield_timeout`, `single_threaded::yield_async` and `single_threaded::yield_animation_frame` API
+  to orchestrate different types of yielding to the environment
+
+### Removed
+
+- `single_threaded::run_cooperatively` is removed in favour of
+  `single_threaded::yield_timeout` and `single_threaded::yield_animation_frame`
+
 ## [0.5.1] - 2021-02-08
 
 ### Changed
