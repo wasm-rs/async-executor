@@ -108,6 +108,10 @@ thread_local! {
 }
 
 thread_local! {
+     static YIELD: UnsafeCell<bool> = UnsafeCell::new(true) ;
+}
+
+thread_local! {
      static EXIT_LOOP: UnsafeCell<bool> = UnsafeCell::new(false) ;
 }
 
@@ -121,7 +125,8 @@ where
 
 /// Run tasks until completion of a future
 ///
-/// If `cooperative` feature is enabled, given future should have `'static` lifetime.
+/// If `cooperative` feature is enabled, yielding to the environment will
+/// not be allowed and the function may block forever.
 #[cfg(not(feature = "cooperative"))]
 pub fn block_on<F, R>(fut: F) -> Option<R>
 where
@@ -143,19 +148,29 @@ where
 
 /// Run tasks until completion of a future
 ///
-/// If `cooperative` feature is enabled, given future should have `'static` lifetime.
+/// ## Important
+///
+/// This function WILL NOT allow yielding to the environment that `cooperative` feature allows,
+/// and it will run the executor until the given future is ready. If yielding is expected,
+/// this will block forever.
+///
 #[cfg(feature = "cooperative")]
 pub fn block_on<F, R>(fut: F) -> Option<R>
 where
-    F: Future<Output = R> + 'static,
-    R: 'static,
+    F: Future<Output = R>,
 {
     let (sender, mut receiver) = oneshot::channel();
     let future = async move {
         let _ = sender.send(fut.await);
     };
-    let task = EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).spawn(future));
+    let task = EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).spawn_non_static(future));
+    YIELD.with(|cell| unsafe {
+        *cell.get() = false;
+    });
     run(Some(task));
+    YIELD.with(|cell| unsafe {
+        *cell.get() = true;
+    });
     match receiver.try_recv() {
         Ok(val) => val,
         Err(_) => None,
@@ -219,7 +234,7 @@ fn run_internal() -> bool {
                 *v = false;
             }
             result
-        });
+        }) && YIELD.with(|cell| unsafe { *cell.get() });
 
         if exit_requested {
             return false;
