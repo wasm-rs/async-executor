@@ -49,8 +49,9 @@ pub fn start() {
         let fut: JsFuture = web_sys::window().unwrap().fetch_with_str("/").into();
         let response: web_sys::Response = executor::yield_async(fut).await.unwrap().into();
         let text_fut: JsFuture = response.text().unwrap().into();
-        dbg!("task 2 will intentionally delay executor by 1 second");
+        dbg!("task 2 will intentionally delay itself by 1 second");
         executor::yield_timeout(std::time::Duration::from_secs(1)).await;
+        dbg!("task 2 wait is over");
         let text: String = executor::yield_async(text_fut)
             .await
             .unwrap()

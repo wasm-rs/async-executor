@@ -284,6 +284,7 @@ mod cooperative {
         output: Option<O>,
         #[pin]
         future: F,
+        ready: Arc<UnsafeCell<bool>>,
     }
 
     impl<F, O> Future for TimeoutYield<F, O>
@@ -295,9 +296,13 @@ mod cooperative {
             if self.done {
                 return Poll::Pending;
             }
+            if self.yielded && !unsafe { *self.ready.get() } {
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
             let should_yield = !self.yielded;
             let this = self.project();
-            if *this.yielded && this.output.is_some() {
+            if *this.yielded && unsafe { *this.ready.get() } && this.output.is_some() {
                 // it's ok to unwrap here because we check `is_some` above
                 let output = this.output.take().unwrap();
                 *this.done = true;
@@ -307,14 +312,32 @@ mod cooperative {
                 (_, result @ Poll::Pending) | (true, result) => {
                     *this.yielded = true;
                     if cfg!(target_arch = "wasm32") {
-                        set_timeout(
-                            Closure::once_into_js(move || {
-                                run_internal();
-                            }),
-                            this.duration
-                                .unwrap_or(Duration::from_millis(0))
-                                .as_millis() as u32,
-                        );
+                        // If this timeout is not immediate,
+                        // return control to the executor at the earliest opportunity
+                        if let Some(duration) = this.duration {
+                            if duration.as_millis() > 0 {
+                                set_timeout(
+                                    Closure::once_into_js(move || {
+                                        run_internal();
+                                    }),
+                                    0,
+                                );
+                            }
+                        }
+
+                        if should_yield {
+                            let ready = this.ready.clone();
+
+                            set_timeout(
+                                Closure::once_into_js(move || {
+                                    unsafe { *ready.get() = true };
+                                    run_internal();
+                                }),
+                                this.duration
+                                    .unwrap_or(Duration::from_millis(0))
+                                    .as_millis() as u32,
+                            );
+                        }
                         EXIT_LOOP.with(|cell| unsafe { *cell.get() = true });
                     }
                     if let Poll::Ready(output) = result {
@@ -333,8 +356,7 @@ mod cooperative {
 
     /// Yields the JavaScript environment using `setTimeout` function
     ///
-    /// This will return control to the executor once JavaScript envrionment
-    /// invokes the `setTimeout` callback
+    /// This future will be complete after `duration` has passed
     ///
     /// Only available under `cooperative` feature gate
     ///
@@ -349,6 +371,7 @@ mod cooperative {
             output: None,
             yielded: false,
             done: false,
+            ready: Arc::new(UnsafeCell::new(false)),
         }
     }
 
@@ -367,6 +390,7 @@ mod cooperative {
             output: None,
             yielded: false,
             done: false,
+            ready: Arc::new(UnsafeCell::new(false)),
         }
     }
 
