@@ -108,6 +108,10 @@ thread_local! {
 }
 
 thread_local! {
+     static UNTIL_SATISFIED: UnsafeCell<bool> = UnsafeCell::new(false) ;
+}
+
+thread_local! {
      static YIELD: UnsafeCell<bool> = UnsafeCell::new(true) ;
 }
 
@@ -185,6 +189,7 @@ where
 /// function enclosing invocation of this [`run`]
 pub fn run(until: Option<Task>) {
     UNTIL.with(|cell| unsafe { *cell.get() = until });
+    UNTIL_SATISFIED.with(|cell| unsafe { *cell.get() = false });
     run_internal();
 }
 
@@ -194,6 +199,10 @@ pub fn run(until: Option<Task>) {
 // Returns `false` if loop exit was requested
 fn run_internal() -> bool {
     let until = UNTIL.with(|cell| unsafe { &*cell.get() });
+    let exit_condition_met = UNTIL_SATISFIED.with(|cell| unsafe { *cell.get() });
+    if exit_condition_met {
+        return true;
+    }
     EXECUTOR.with(|cell| loop {
         let task = (unsafe { &mut *cell.get() }).queue.pop();
 
@@ -216,12 +225,14 @@ fn run_internal() -> bool {
 
                 if let Some(Task { ref token }) = until {
                     if *token == task.token {
+                        UNTIL_SATISFIED.with(|cell| unsafe { *cell.get() = true });
                         return true;
                     }
                 }
             }
         }
         if until.is_none() && (unsafe { &mut *cell.get() }).futures.is_empty() {
+            UNTIL_SATISFIED.with(|cell| unsafe { *cell.get() = true });
             return true;
         }
 
