@@ -120,6 +120,9 @@ where
 }
 
 /// Run tasks until completion of a future
+///
+/// If `cooperative` feature is enabled, given future should have `'static` lifetime.
+#[cfg(not(feature = "cooperative"))]
 pub fn block_on<F, R>(fut: F) -> Option<R>
 where
     F: Future<Output = R>,
@@ -131,6 +134,27 @@ where
     // We know that this task is to complete by the end of this function,
     // so let's pretend it is static
     let task = EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).spawn_non_static(future));
+    run(Some(task));
+    match receiver.try_recv() {
+        Ok(val) => val,
+        Err(_) => None,
+    }
+}
+
+/// Run tasks until completion of a future
+///
+/// If `cooperative` feature is enabled, given future should have `'static` lifetime.
+#[cfg(feature = "cooperative")]
+pub fn block_on<F, R>(fut: F) -> Option<R>
+where
+    F: Future<Output = R> + 'static,
+    R: 'static,
+{
+    let (sender, mut receiver) = oneshot::channel();
+    let future = async move {
+        let _ = sender.send(fut.await);
+    };
+    let task = EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).spawn(future));
     run(Some(task));
     match receiver.try_recv() {
         Ok(val) => val,
