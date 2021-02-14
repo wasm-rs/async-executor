@@ -426,7 +426,7 @@ mod cooperative {
             }
             let should_yield = !self.yielded;
             let this = self.project();
-            if *this.yielded && unsafe { this.output.get().as_ref() }.is_some() {
+            if *this.yielded && unsafe { &*this.output.get() }.is_some() {
                 // it's ok to unwrap here because we check `is_some` above
                 let output = unsafe { &mut *this.output.get() }.take().unwrap();
                 *this.done = true;
@@ -488,7 +488,7 @@ mod cooperative {
             }
             let should_yield = !self.yielded;
             let this = self.project();
-            if *this.yielded && unsafe { this.output.get().as_ref() }.is_some() {
+            if *this.yielded && unsafe { &*this.output.get() }.is_some() {
                 // it's ok to unwrap here because we check `is_some` above
                 let output = unsafe { &mut *this.output.get() }.take().unwrap();
                 *this.done = true;

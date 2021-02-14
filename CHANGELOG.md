@@ -2,6 +2,11 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Fixed
+
+- `single_threaded::yield_animation_frame` and `single_threaded::yield_until_idle` futures might
+  panic at times
+
 ## [0.6.0] - 2021-02-13
 
 ### Added
