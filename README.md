@@ -19,6 +19,11 @@ wasm-rs-async-executor = "0.6.0"
 `wasm-rs-async-executor` is expected to work on stable Rust, 1.49.0 and higher up. It *may* also
 work on earlier versions. This hasn't been tested yet.
 
+## Supported targets
+
+Currently, it's been only tested on `wasm32-unknown-unknown`, but excluding `cooperative` functionality,
+it may work on other wasm32 and non-wasm32 targets. Further testing is to be completed.
+
 ## Notes
 
 Please note that this library hasn't received much analysis in terms of safety
