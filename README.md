@@ -13,7 +13,7 @@ Include this dependency in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-wasm-rs-async-executor = "0.5.1"
+wasm-rs-async-executor = "0.6.0"
 ```
 
 `wasm-rs-async-executor` is expected to work on stable Rust, 1.49.0 and higher up. It *may* also
