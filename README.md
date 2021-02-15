@@ -41,14 +41,18 @@ to note).
 
 **A:** *(longer)* There are some subtle differences in the way `wasm-rs-async-executor` exposes its functionality. The
 core idea behind it is to expose a reasonable amount of **explicit** controls over the its operations. You need
-to run the executor explicitly, you can block on certain futures (again, explicitly -- which gives you a limited
+to run the executor explicitly, you can block on futures (again, explicitly -- which gives you a limited
 ability to do scoped futures). It does come with minor trade-offs. For example, if you want to use async APIs from
 your host environment, you can't simply `await` on then, as the executor won't yield to the browser until told to do
-so (using `yield_async(future).await`). Ultimately, if this amount of control is beneficial for your case, then perhaps
-this executor is waranted. It is also important to note that **currently** `wasm-rs-async-executor` **does not** support
-WebAssembly multi-threading in any way. `wasm-bindgen-futures` does, if the standard library is built with support for it.
-It is planned to support this, but hasn't been high priority so far due to
-[current state of things](https://github.com/rust-lang/rust/issues/77839) in Rust.
+so. However, this is typically solved by simply running a permanent task that loops yielding to the browser.
+
+Ultimately, if this amount of control is beneficial for your case, then perhaps
+this executor is waranted. It is also important to note that **currently**
+`wasm-rs-async-executor` **does not** support WebAssembly multi-threading in
+any way. `wasm-bindgen-futures` does, if the standard library is built with
+support for it.  It is planned to support this, but hasn't been high priority
+so far due to [current state of
+things](https://github.com/rust-lang/rust/issues/77839) in Rust.
 
 
 ## License
