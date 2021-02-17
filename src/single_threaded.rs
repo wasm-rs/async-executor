@@ -22,6 +22,8 @@
 //! ```
 use futures::channel::oneshot;
 use futures::task::{waker_ref, ArcWake};
+#[cfg(feature = "debug")]
+use std::any::{type_name, TypeId};
 use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -30,12 +32,80 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 /// Task token
-pub type Token = usize;
+type Token = usize;
+
+#[cfg(feature = "debug")]
+#[derive(Clone, Debug)]
+pub struct TypeInfo {
+    type_id: Option<TypeId>,
+    type_name: &'static str,
+}
+
+#[cfg(feature = "debug")]
+impl TypeInfo {
+    fn new<T>() -> Self
+    where
+        T: 'static,
+    {
+        Self {
+            type_name: type_name::<T>(),
+            type_id: Some(TypeId::of::<T>()),
+        }
+    }
+
+    fn new_non_static<T>() -> Self {
+        Self {
+            type_name: type_name::<T>(),
+            type_id: None,
+        }
+    }
+
+    /// Returns tasks's type name
+    pub fn type_name(&self) -> &'static str {
+        self.type_name
+    }
+
+    /// Returns tasks's [`std::any::TypeId`]
+    ///
+    /// If it's `None` then the type does not have a `'static` lifetime
+    pub fn type_id(&self) -> Option<TypeId> {
+        self.type_id
+    }
+}
 
 /// Task handle
 #[derive(Clone)]
 pub struct Task {
     token: Token,
+    #[cfg(feature = "debug")]
+    type_info: Arc<TypeInfo>,
+}
+
+impl PartialEq for Task {
+    fn eq(&self, other: &Self) -> bool {
+        self.token == other.token
+    }
+}
+
+impl Eq for Task {}
+
+impl PartialOrd for Task {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.token.partial_cmp(&other.token)
+    }
+}
+
+impl Ord for Task {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.token.cmp(&other.token)
+    }
+}
+
+impl Task {
+    #[cfg(feature = "debug")]
+    pub fn type_info(&self) -> &TypeInfo {
+        self.type_info.as_ref()
+    }
 }
 
 impl ArcWake for Task {
@@ -47,11 +117,8 @@ impl ArcWake for Task {
 /// Single-threaded executor
 struct Executor {
     counter: Token,
-    futures: BTreeMap<Token, Pin<Box<dyn Future<Output = ()>>>>,
-    #[cfg(feature = "debug")]
-    types: BTreeMap<Token, String>,
+    futures: BTreeMap<Task, Pin<Box<dyn Future<Output = ()>>>>,
     queue: Vec<Arc<Task>>,
-    executing: Option<Token>,
 }
 
 impl Executor {
@@ -59,15 +126,12 @@ impl Executor {
         Self {
             counter: 0,
             futures: BTreeMap::new(),
-            #[cfg(feature = "debug")]
-            types: BTreeMap::new(),
             queue: vec![],
-            executing: None,
         }
     }
 
     fn enqueue(&mut self, task: Arc<Task>) {
-        if self.futures.contains_key(&task.token) {
+        if self.futures.contains_key(&task) {
             self.queue.insert(0, task);
         }
     }
@@ -76,7 +140,19 @@ impl Executor {
     where
         F: Future<Output = ()> + 'static,
     {
-        self.spawn_non_static(fut)
+        let token = self.counter;
+        self.counter = self.counter.wrapping_add(1);
+        let task = Task {
+            token,
+            #[cfg(feature = "debug")]
+            type_info: Arc::new(TypeInfo::new::<F>()),
+        };
+
+        self.futures.insert(task.clone(), unsafe {
+            Pin::new_unchecked(Box::new(fut) as Box<dyn Future<Output = ()>>)
+        });
+        self.queue.push(Arc::new(task.clone()));
+        task
     }
 
     fn spawn_non_static<F>(&mut self, fut: F) -> Task
@@ -85,15 +161,17 @@ impl Executor {
     {
         let token = self.counter;
         self.counter = self.counter.wrapping_add(1);
-        #[cfg(feature = "debug")]
-        self.types.insert(token, std::any::type_name::<F>().into());
+        let task = Task {
+            token,
+            #[cfg(feature = "debug")]
+            type_info: Arc::new(TypeInfo::new_non_static::<F>()),
+        };
 
-        self.futures.insert(token, unsafe {
+        self.futures.insert(task.clone(), unsafe {
             Pin::new_unchecked(std::mem::transmute::<_, Box<dyn Future<Output = ()>>>(
                 Box::new(fut) as Box<dyn Future<Output = ()>>,
             ))
         });
-        let task = Task { token };
         self.queue.push(Arc::new(task.clone()));
         task
     }
@@ -207,23 +285,19 @@ fn run_internal() -> bool {
         let task = (unsafe { &mut *cell.get() }).queue.pop();
 
         if let Some(task) = task {
-            let future = (unsafe { &mut *cell.get() }).futures.get_mut(&task.token);
+            let future = (unsafe { &mut *cell.get() }).futures.get_mut(&task);
             let ready = if let Some(future) = future {
                 let waker = waker_ref(&task);
                 let context = &mut Context::from_waker(&*waker);
-                (unsafe { &mut *cell.get() }).executing.replace(task.token);
                 let ready = matches!(future.as_mut().poll(context), Poll::Ready(_));
-                (unsafe { &mut *cell.get() }).executing.take();
                 ready
             } else {
                 false
             };
             if ready {
-                (unsafe { &mut *cell.get() }).futures.remove(&task.token);
-                #[cfg(feature = "debug")]
-                (unsafe { &mut *cell.get() }).types.remove(&task.token);
+                (unsafe { &mut *cell.get() }).futures.remove(&task);
 
-                if let Some(Task { ref token }) = until {
+                if let Some(Task { ref token, .. }) = until {
                     if *token == task.token {
                         UNTIL_SATISFIED.with(|cell| unsafe { *cell.get() = true });
                         return true;
@@ -254,8 +328,8 @@ fn run_internal() -> bool {
             && !(unsafe { &mut *cell.get() }).futures.is_empty()
         {
             // the executor is starving
-            for token in (unsafe { &mut *cell.get() }).futures.keys() {
-                (unsafe { &mut *cell.get() }).enqueue(Arc::new(Task { token: *token }));
+            for task in (unsafe { &mut *cell.get() }).futures.keys() {
+                (unsafe { &mut *cell.get() }).enqueue(Arc::new(task.clone()));
             }
         }
     })
@@ -548,7 +622,7 @@ mod cooperative {
 pub use cooperative::*;
 
 /// Returns the number of tasks currently registered with the executor
-pub fn tasks() -> usize {
+pub fn tasks_count() -> usize {
     EXECUTOR.with(|cell| {
         let executor = unsafe { &mut *cell.get() };
         executor.futures.len()
@@ -556,46 +630,30 @@ pub fn tasks() -> usize {
 }
 
 /// Returns the number of tasks currently in the queue to execute
-pub fn queued_tasks() -> usize {
+pub fn queued_tasks_count() -> usize {
     EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).queue.len())
 }
 
-/// Returns tokens for all tasks that haven't completed yet
-///
-/// ## Note
-///
-/// Enabled only when `debug` feature is turned on
-#[cfg(feature = "debug")]
-pub fn tokens() -> Vec<Token> {
-    EXECUTOR.with(|cell| (unsafe { &*cell.get() }).types.keys().map(|k| *k).collect())
-}
-
-/// Returns tokens for queued tasks
-///
-/// ## Note
-///
-/// Enabled only when `debug` feature is turned on
-#[cfg(feature = "debug")]
-pub fn queued_tokens() -> Vec<Token> {
+/// Returns all tasks that haven't completed yet
+pub fn tasks() -> Vec<Task> {
     EXECUTOR.with(|cell| {
         (unsafe { &*cell.get() })
-            .queue
-            .iter()
-            .map(|t| t.token)
+            .futures
+            .keys()
+            .map(|t| Task::clone(&t))
             .collect()
     })
 }
 
-/// Returns task's future type for a given token
-///
-/// Useful for introspection into current task list.
-///
-/// ## Note
-///
-/// Enabled only when `debug` feature is turned on
-#[cfg(feature = "debug")]
-pub fn task_type(token: Token) -> Option<&'static String> {
-    EXECUTOR.with(|cell| (unsafe { &*cell.get() }).types.get(&token))
+/// Returns tokens for queued tasks
+pub fn queued_tasks() -> Vec<Task> {
+    EXECUTOR.with(|cell| {
+        (unsafe { &*cell.get() })
+            .queue
+            .iter()
+            .map(|t| Task::clone(&t))
+            .collect()
+    })
 }
 
 /// Removes all tasks from the executor
@@ -656,7 +714,7 @@ mod tests {
         let (sender2, receiver2) = oneshot::channel::<()>();
         let task1 = spawn(async move {
             let _ = receiver2.await;
-            let _ = sender.send((tasks(), queued_tasks()));
+            let _ = sender.send((tasks_count(), queued_tasks_count()));
         });
         let _task2 = spawn(async move {
             let _ = sender2.send(());
@@ -669,9 +727,9 @@ mod tests {
         // task1 is being executed, task2 has nothing new
         assert_eq!(queued_tasks_, 0);
         // task1 is gone
-        assert_eq!(tasks(), 1);
+        assert_eq!(tasks_count(), 1);
         // task2 still has nothing new
-        assert_eq!(queued_tasks(), 0);
+        assert_eq!(queued_tasks_count(), 0);
         evict_all();
     }
 
@@ -683,12 +741,12 @@ mod tests {
         let task = spawn(async move {
             let _ = receiver.await;
         });
-        assert_eq!(tasks(), 1);
+        assert_eq!(tasks_count(), 1);
         evict_all();
-        assert_eq!(tasks(), 0);
+        assert_eq!(tasks_count(), 0);
         ArcWake::wake_by_ref(&Arc::new(task));
-        assert_eq!(tasks(), 0);
-        assert_eq!(queued_tasks(), 0);
+        assert_eq!(tasks_count(), 0);
+        assert_eq!(queued_tasks_count(), 0);
         evict_all();
     }
 
@@ -739,10 +797,15 @@ mod tests {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn task_type_info() {
         spawn(futures::future::pending());
-        assert!(task_type(tokens()[0])
-            .unwrap()
+        assert!(tasks()[0]
+            .type_info()
+            .type_name()
             .contains("future::pending::Pending"));
+        assert_eq!(
+            tasks()[0].type_info().type_id().unwrap(),
+            TypeId::of::<futures::future::Pending<()>>()
+        );
         evict_all();
-        assert_eq!(tokens().len(), 0);
+        assert_eq!(tasks().len(), 0);
     }
 }

@@ -2,6 +2,21 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- `TypeId` information on the task is now available through `Task.type_info().type_id()`
+
+### Changed
+
+- `single_threaded::Token` type is no longer public
+- `single_threaded::tasks()` has been renamed to `tasks_count()`
+- `single_threaded::queued_tasks()` has been renamed to `tasks_count()`
+- `single_threaded::tokens()` has been replaced with `tasks()` and returns `Vec<Task>` now;
+   it's no longer under `debug` feature gate
+- `single_threaded::queued_tokens()` has been replaced with `queued_tasks()` and returns `Vec<Task>` now;
+   it's no longer under `debug` feature gate
+- `single_threaded::task_type()` has been replaced with `Task.type_info().type_name()`
+
 ## [0.6.1] - 2021-02-14
 
 ### Fixed
