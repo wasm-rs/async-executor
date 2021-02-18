@@ -2,6 +2,8 @@
 
 ## [Unreleased] - ReleaseDate
 
+## [0.7.0] - 2021-02-17
+
 ### Added
 
 - `TypeId` information on the task is now available through `Task.type_info().type_id()`
@@ -96,7 +98,8 @@ The snapshot of 0.4.0's code was published incorrectly, thus yanked. 0.4.1 repla
 Initial release
 
 <!-- next-url -->
-[Unreleased]: https://github.com/wasm-rs/async-executor/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/wasm-rs/async-executor/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/wasm-rs/async-executor/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/wasm-rs/async-executor/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/wasm-rs/async-executor/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/wasm-rs/async-executor/compare/v0.5.0...v0.5.1
