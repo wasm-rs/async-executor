@@ -2,10 +2,11 @@
 
 ## [Unreleased] - ReleaseDate
 
-### Added
+### Changed
 
-- `single_threaded::Task` now implements `std::future::Future` for the purposes
-  of joining task until their completion.
+- `single_threaded::spawn` now returns `TaskHandle<T>` that allows joining
+  until task completion and retrieval of task's result
+- Tasks are no longer required to return `()`
 
 ## [0.7.0] - 2021-02-17
 

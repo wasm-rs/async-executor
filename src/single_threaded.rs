@@ -73,10 +73,7 @@ impl TypeInfo {
     }
 }
 
-/// Task handle
-///
-/// `Task` implements [`std::future::Future`] to allow for joining tasks
-/// until their completion.
+/// Task information
 #[derive(Clone)]
 pub struct Task {
     token: Token,
@@ -111,19 +108,38 @@ impl Task {
     }
 }
 
-impl Future for Task {
-    type Output = ();
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let done = !EXECUTOR.with(|cell| {
-            (unsafe { &*cell.get() })
-                .futures
-                .contains_key(&self.as_ref())
-        });
-        if done {
-            Poll::Ready(())
-        } else {
-            cx.waker().wake_by_ref();
-            Poll::Pending
+/// Task handle
+///
+/// Implements [`std::future::Future`] to allow for waiting for task completion
+pub struct TaskHandle<T> {
+    receiver: oneshot::Receiver<T>,
+    task: Task,
+}
+
+impl<T> TaskHandle<T> {
+    /// Returns a copy of task information record
+    pub fn task(&self) -> Task {
+        self.task.clone()
+    }
+}
+
+/// Task joining error
+#[derive(Debug, Clone)]
+pub enum JoinError {
+    /// Task was canceled
+    Canceled,
+}
+
+impl<T> Future for TaskHandle<T> {
+    type Output = Result<T, JoinError>;
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.receiver.try_recv() {
+            Err(oneshot::Canceled) => Poll::Ready(Err(JoinError::Canceled)),
+            Ok(Some(result)) => Poll::Ready(Ok(result)),
+            Ok(None) => {
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
         }
     }
 }
@@ -156,9 +172,10 @@ impl Executor {
         }
     }
 
-    fn spawn<F>(&mut self, fut: F) -> Task
+    fn spawn<F, T>(&mut self, fut: F) -> TaskHandle<T>
     where
-        F: Future<Output = ()> + 'static,
+        F: Future<Output = T> + 'static,
+        T: 'static,
     {
         let token = self.counter;
         self.counter = self.counter.wrapping_add(1);
@@ -168,11 +185,15 @@ impl Executor {
             type_info: Arc::new(TypeInfo::new::<F>()),
         };
 
+        let (sender, receiver) = oneshot::channel();
+
         self.futures.insert(task.clone(), unsafe {
-            Pin::new_unchecked(Box::new(fut) as Box<dyn Future<Output = ()>>)
+            Pin::new_unchecked(Box::new(async move {
+                let _ = sender.send(fut.await);
+            }) as Box<dyn Future<Output = ()>>)
         });
         self.queue.push(Arc::new(task.clone()));
-        task
+        TaskHandle { receiver, task }
     }
 
     fn spawn_non_static<F>(&mut self, fut: F) -> Task
@@ -218,9 +239,10 @@ thread_local! {
 }
 
 /// Spawn a task
-pub fn spawn<F>(fut: F) -> Task
+pub fn spawn<F, T>(fut: F) -> TaskHandle<T>
 where
-    F: Future<Output = ()> + 'static,
+    F: Future<Output = T> + 'static,
+    T: 'static,
 {
     EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).spawn(fut))
 }
@@ -701,7 +723,7 @@ mod tests {
     fn test() {
         use tokio::sync::*;
         let (sender, receiver) = oneshot::channel::<()>();
-        let _task = spawn(async move {
+        let _handle = spawn(async move {
             let _ = receiver.await;
         });
         let _ = sender.send(());
@@ -714,15 +736,15 @@ mod tests {
     fn test_until() {
         use tokio::sync::*;
         let (_sender1, receiver1) = oneshot::channel::<()>();
-        let _task1 = spawn(async move {
+        let _handle1 = spawn(async move {
             let _ = receiver1.await;
         });
         let (sender2, receiver2) = oneshot::channel::<()>();
-        let task2 = spawn(async move {
+        let handle2 = spawn(async move {
             let _ = receiver2.await;
         });
         let _ = sender2.send(());
-        run(Some(task2));
+        run(Some(handle2.task()));
         evict_all();
     }
 
@@ -732,23 +754,23 @@ mod tests {
         use tokio::sync::*;
         let (sender, mut receiver) = oneshot::channel();
         let (sender2, receiver2) = oneshot::channel::<()>();
-        let task1 = spawn(async move {
+        let handle1 = spawn(async move {
             let _ = receiver2.await;
             let _ = sender.send((tasks_count(), queued_tasks_count()));
         });
-        let _task2 = spawn(async move {
+        let _handle2 = spawn(async move {
             let _ = sender2.send(());
-            futures::future::pending().await // this will never end
+            futures::future::pending::<()>().await // this will never end
         });
-        run(Some(task1));
+        run(Some(handle1.task()));
         let (tasks_, queued_tasks_) = receiver.try_recv().unwrap();
-        // task1 + task2
+        // handle1 + handle2
         assert_eq!(tasks_, 2);
-        // task1 is being executed, task2 has nothing new
+        // handle1 is being executed, handle2 has nothing new
         assert_eq!(queued_tasks_, 0);
-        // task1 is gone
+        // handle1 is gone
         assert_eq!(tasks_count(), 1);
-        // task2 still has nothing new
+        // handle2 still has nothing new
         assert_eq!(queued_tasks_count(), 0);
         evict_all();
     }
@@ -758,13 +780,13 @@ mod tests {
     fn evicted_tasks_dont_requeue() {
         use tokio::sync::*;
         let (_sender, receiver) = oneshot::channel::<()>();
-        let task = spawn(async move {
+        let handle = spawn(async move {
             let _ = receiver.await;
         });
         assert_eq!(tasks_count(), 1);
         evict_all();
         assert_eq!(tasks_count(), 0);
-        ArcWake::wake_by_ref(&Arc::new(task));
+        ArcWake::wake_by_ref(&Arc::new(handle.task()));
         assert_eq!(tasks_count(), 0);
         assert_eq!(queued_tasks_count(), 0);
         evict_all();
@@ -775,12 +797,12 @@ mod tests {
     fn token_exhaustion() {
         set_counter(usize::MAX);
         // this should be fine anyway
-        let task_0 = spawn(async move {});
+        let handle0 = spawn(async move {});
         // this should NOT crash
-        let task = spawn(async move {});
+        let handle = spawn(async move {});
         // new token should be different and wrap back to the beginning
-        assert!(task.token != task_0.token);
-        assert_eq!(task.token, 0);
+        assert!(handle.task().token != handle0.task().token);
+        assert_eq!(handle.task().token, 0);
         evict_all();
     }
 
@@ -789,7 +811,7 @@ mod tests {
     fn blocking_on() {
         use tokio::sync::*;
         let (sender, receiver) = oneshot::channel::<u8>();
-        let _task = spawn(async move {
+        let _handle = spawn(async move {
             let _ = sender.send(1);
         });
         let result = block_on(async move { receiver.await.unwrap() });
@@ -802,7 +824,7 @@ mod tests {
     fn starvation() {
         use tokio::sync::*;
         let (sender, receiver) = oneshot::channel();
-        let _task = spawn(async move {
+        let _handle = spawn(async move {
             tokio::task::yield_now().await;
             tokio::task::yield_now().await;
             let _ = sender.send(());
@@ -816,7 +838,7 @@ mod tests {
     #[cfg_attr(not(target_arch = "wasm32"), test)]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn task_type_info() {
-        spawn(futures::future::pending());
+        spawn(futures::future::pending::<()>());
         assert!(tasks()[0]
             .type_info()
             .type_name()
@@ -835,21 +857,21 @@ mod tests {
         use tokio::sync::*;
         let (sender, receiver) = oneshot::channel();
         let (sender1, mut receiver1) = oneshot::channel();
-        let _task1 = spawn(async move {
+        let _handle1 = spawn(async move {
             let _ = sender.send(());
         });
 
-        let task2 = spawn(async move {
+        let handle2 = spawn(async move {
             let _ = receiver.await;
+            100u8
         });
 
-        let task3 = spawn(async move {
-            task2.await;
-            let _ = sender1.send(());
+        let handle3 = spawn(async move {
+            let _ = sender1.send(handle2.await);
         });
-        run(Some(task3));
+        run(Some(handle3.task()));
 
-        assert_eq!(receiver1.try_recv().unwrap(), ());
+        assert_eq!(receiver1.try_recv().unwrap().unwrap(), 100);
 
         evict_all();
     }
