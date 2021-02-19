@@ -2,6 +2,8 @@
 
 ## [Unreleased] - ReleaseDate
 
+## [0.8.0] - 2021-02-19
+
 ### Changed
 
 - `single_threaded::spawn` now returns `TaskHandle<T>` that allows joining
@@ -104,7 +106,8 @@ The snapshot of 0.4.0's code was published incorrectly, thus yanked. 0.4.1 repla
 Initial release
 
 <!-- next-url -->
-[Unreleased]: https://github.com/wasm-rs/async-executor/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/wasm-rs/async-executor/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/wasm-rs/async-executor/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/wasm-rs/async-executor/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/wasm-rs/async-executor/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/wasm-rs/async-executor/compare/v0.5.1...v0.6.0
