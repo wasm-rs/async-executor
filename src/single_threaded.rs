@@ -74,6 +74,9 @@ impl TypeInfo {
 }
 
 /// Task handle
+///
+/// `Task` implements [`std::future::Future`] to allow for joining tasks
+/// until their completion.
 #[derive(Clone)]
 pub struct Task {
     token: Token,
@@ -105,6 +108,23 @@ impl Task {
     #[cfg(feature = "debug")]
     pub fn type_info(&self) -> &TypeInfo {
         self.type_info.as_ref()
+    }
+}
+
+impl Future for Task {
+    type Output = ();
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let done = !EXECUTOR.with(|cell| {
+            (unsafe { &*cell.get() })
+                .futures
+                .contains_key(&self.as_ref())
+        });
+        if done {
+            Poll::Ready(())
+        } else {
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        }
     }
 }
 
@@ -807,5 +827,30 @@ mod tests {
         );
         evict_all();
         assert_eq!(tasks().len(), 0);
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    fn joinining() {
+        use tokio::sync::*;
+        let (sender, receiver) = oneshot::channel();
+        let (sender1, mut receiver1) = oneshot::channel();
+        let _task1 = spawn(async move {
+            let _ = sender.send(());
+        });
+
+        let task2 = spawn(async move {
+            let _ = receiver.await;
+        });
+
+        let task3 = spawn(async move {
+            task2.await;
+            let _ = sender1.send(());
+        });
+        run(Some(task3));
+
+        assert_eq!(receiver1.try_recv().unwrap(), ());
+
+        evict_all();
     }
 }

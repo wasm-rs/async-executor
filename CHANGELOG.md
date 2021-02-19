@@ -2,6 +2,11 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- `single_threaded::Task` now implements `std::future::Future` for the purposes
+  of joining task until their completion.
+
 ## [0.7.0] - 2021-02-17
 
 ### Added
