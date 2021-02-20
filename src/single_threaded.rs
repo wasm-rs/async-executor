@@ -377,7 +377,7 @@ fn run_internal() -> bool {
     })
 }
 
-#[cfg(feature = "cooperative")]
+#[cfg(all(feature = "cooperative", not(target_os = "wasi")))]
 mod cooperative {
     use super::{run_internal, EXIT_LOOP};
     use pin_project::pin_project;
@@ -660,7 +660,7 @@ mod cooperative {
     }
 }
 
-#[cfg(feature = "cooperative")]
+#[cfg(all(feature = "cooperative", not(target_os = "wasi")))]
 pub use cooperative::*;
 
 /// Returns the number of tasks currently registered with the executor
@@ -715,11 +715,11 @@ fn set_counter(counter: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use wasm_bindgen_test::*;
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     fn test() {
         use tokio::sync::*;
         let (sender, receiver) = oneshot::channel::<()>();
@@ -731,8 +731,8 @@ mod tests {
         evict_all();
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     fn test_until() {
         use tokio::sync::*;
         let (_sender1, receiver1) = oneshot::channel::<()>();
@@ -748,8 +748,8 @@ mod tests {
         evict_all();
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     fn test_counts() {
         use tokio::sync::*;
         let (sender, mut receiver) = oneshot::channel();
@@ -775,8 +775,8 @@ mod tests {
         evict_all();
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     fn evicted_tasks_dont_requeue() {
         use tokio::sync::*;
         let (_sender, receiver) = oneshot::channel::<()>();
@@ -792,8 +792,8 @@ mod tests {
         evict_all();
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     fn token_exhaustion() {
         set_counter(usize::MAX);
         // this should be fine anyway
@@ -806,8 +806,8 @@ mod tests {
         evict_all();
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     fn blocking_on() {
         use tokio::sync::*;
         let (sender, receiver) = oneshot::channel::<u8>();
@@ -819,8 +819,8 @@ mod tests {
         evict_all();
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     fn starvation() {
         use tokio::sync::*;
         let (sender, receiver) = oneshot::channel();
@@ -835,8 +835,8 @@ mod tests {
     }
 
     #[cfg(feature = "debug")]
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     fn task_type_info() {
         spawn(futures::future::pending::<()>());
         assert!(tasks()[0]
@@ -851,8 +851,8 @@ mod tests {
         assert_eq!(tasks().len(), 0);
     }
 
-    #[cfg_attr(not(target_arch = "wasm32"), test)]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test)]
     fn joinining() {
         use tokio::sync::*;
         let (sender, receiver) = oneshot::channel();

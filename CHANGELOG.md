@@ -2,6 +2,10 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- Continuous integration with `wasm32-wasi` target
+
 ## [0.8.0] - 2021-02-19
 
 ### Changed
