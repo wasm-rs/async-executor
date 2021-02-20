@@ -377,7 +377,11 @@ fn run_internal() -> bool {
     })
 }
 
-#[cfg(all(feature = "cooperative", not(target_os = "wasi")))]
+#[cfg(all(
+    feature = "cooperative",
+    target_arch = "wasm32",
+    not(target_os = "wasi")
+))]
 mod cooperative {
     use super::{run_internal, EXIT_LOOP};
     use pin_project::pin_project;
@@ -660,7 +664,11 @@ mod cooperative {
     }
 }
 
-#[cfg(all(feature = "cooperative", not(target_os = "wasi")))]
+#[cfg(all(
+    feature = "cooperative",
+    target_arch = "wasm32",
+    not(target_os = "wasi")
+))]
 pub use cooperative::*;
 
 /// Returns the number of tasks currently registered with the executor
