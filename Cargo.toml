@@ -39,5 +39,5 @@ requestIdleCallback = ["cooperative-browser", "web-sys/IdleDeadline"]
 all-features = true
 
 [package.metadata.wasm.rs]
-targets = ["wasm32-unknown-unknown"]
+targets = ["wasm32-unknown-unknown", "wasm32-wasi"]
 wasm-readme = "README.md"

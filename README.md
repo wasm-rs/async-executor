@@ -21,8 +21,9 @@ work on earlier versions. This hasn't been tested yet.
 
 ## Supported targets
 
-Currently, it's been only tested on `wasm32-unknown-unknown`, but excluding `cooperative` functionality,
-it may work on other wasm32 and non-wasm32 targets. Further testing is to be completed.
+Currently, it's been only tested on `wasm32-unknown-unknown` and, excluding `cooperative` functionality,
+it passes tests under [wasmtime](https://wasmtime.dev/) and [wasmer](https://wasmer.io/) with `wasm32-wasi` target.
+Further testing is to be completed.
 
 ## Notes
 
