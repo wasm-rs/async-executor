@@ -3,7 +3,7 @@ let
   pkgs = import <nixpkgs> { overlays = [ moz_overlay ]; };
   rustChannel = (pkgs.rustChannelOf { channel = "stable";  });
   rust = (rustChannel.rust.override {
-    targets = ["wasm32-unknown-unknown", "wasm32-wasi"];
+    targets = ["wasm32-unknown-unknown" "wasm32-wasi"];
   });
 in
 pkgs.stdenv.mkDerivation rec {
