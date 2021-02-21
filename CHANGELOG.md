@@ -2,6 +2,10 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Changed
+
+- `single_threaded::block_on` returns `R` instead of `Option<R>` now
+
 ## [0.8.1] - 2021-02-20
 
 ### Added
