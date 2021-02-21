@@ -196,9 +196,9 @@ impl Executor {
         TaskHandle { receiver, task }
     }
 
-    fn spawn_non_static<F>(&mut self, fut: F) -> Task
+    fn spawn_non_static<F, T>(&mut self, fut: F) -> TaskHandle<T>
     where
-        F: Future<Output = ()>,
+        F: Future<Output = T>,
     {
         let token = self.counter;
         self.counter = self.counter.wrapping_add(1);
@@ -208,13 +208,17 @@ impl Executor {
             type_info: Arc::new(TypeInfo::new_non_static::<F>()),
         };
 
+        let (sender, receiver) = oneshot::channel();
+
         self.futures.insert(task.clone(), unsafe {
             Pin::new_unchecked(std::mem::transmute::<_, Box<dyn Future<Output = ()>>>(
-                Box::new(fut) as Box<dyn Future<Output = ()>>,
+                Box::new(async move {
+                    let _ = sender.send(fut.await);
+                }) as Box<dyn Future<Output = ()>>,
             ))
         });
         self.queue.push(Arc::new(task.clone()));
-        task
+        TaskHandle { receiver, task }
     }
 }
 
@@ -251,21 +255,20 @@ where
 ///
 /// If `cooperative` feature is enabled, given future should have `'static` lifetime.
 #[cfg(not(feature = "cooperative"))]
-pub fn block_on<F, R>(fut: F) -> Option<R>
+pub fn block_on<F, R>(fut: F) -> R
 where
     F: Future<Output = R>,
 {
-    let (sender, mut receiver) = oneshot::channel();
-    let future = async move {
-        let _ = sender.send(fut.await);
-    };
     // We know that this task is to complete by the end of this function,
     // so let's pretend it is static
-    let task = EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).spawn_non_static(future));
-    run(Some(task));
-    match receiver.try_recv() {
-        Ok(val) => val,
-        Err(_) => None,
+    let mut handle = EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).spawn_non_static(fut));
+    run(Some(handle.task()));
+    loop {
+        match handle.receiver.try_recv() {
+            Ok(None) => {}
+            Ok(Some(v)) => return v,
+            Err(_) => unreachable!(), // the data was sent at this point
+        }
     }
 }
 
@@ -278,25 +281,24 @@ where
 /// this will block forever.
 ///
 #[cfg(feature = "cooperative")]
-pub fn block_on<F, R>(fut: F) -> Option<R>
+pub fn block_on<F, R>(fut: F) -> R
 where
     F: Future<Output = R>,
 {
-    let (sender, mut receiver) = oneshot::channel();
-    let future = async move {
-        let _ = sender.send(fut.await);
-    };
-    let task = EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).spawn_non_static(future));
+    let mut handle = EXECUTOR.with(|cell| (unsafe { &mut *cell.get() }).spawn_non_static(fut));
     YIELD.with(|cell| unsafe {
         *cell.get() = false;
     });
-    run(Some(task));
+    run(Some(handle.task()));
     YIELD.with(|cell| unsafe {
         *cell.get() = true;
     });
-    match receiver.try_recv() {
-        Ok(val) => val,
-        Err(_) => None,
+    loop {
+        match handle.receiver.try_recv() {
+            Ok(None) => {}
+            Ok(Some(v)) => return v,
+            Err(_) => unreachable!(), // the data was sent at this point
+        }
     }
 }
 
@@ -823,7 +825,7 @@ mod tests {
             let _ = sender.send(1);
         });
         let result = block_on(async move { receiver.await.unwrap() });
-        assert_eq!(result.unwrap(), 1);
+        assert_eq!(result, 1);
         evict_all();
     }
 
@@ -838,7 +840,7 @@ mod tests {
             let _ = sender.send(());
         });
         let result = block_on(async move { receiver.await.unwrap() });
-        assert_eq!(result.unwrap(), ());
+        assert_eq!(result, ());
         evict_all();
     }
 
