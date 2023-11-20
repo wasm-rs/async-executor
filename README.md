@@ -44,7 +44,7 @@ to note).
 core idea behind it is to expose a reasonable amount of **explicit** controls over the its operations. You need
 to run the executor explicitly, you can block on futures (again, explicitly -- which gives you a limited
 ability to do scoped futures). It does come with minor trade-offs. For example, if you want to use async APIs from
-your host environment, you can't simply `await` on then, as the executor won't yield to the browser until told to do
+your host environment, you can't simply `await` on them, as the executor won't yield to the browser until told to do
 so. However, this is typically solved by simply running a permanent task that loops yielding to the browser.
 
 Ultimately, if this amount of control is beneficial for your case, then perhaps
